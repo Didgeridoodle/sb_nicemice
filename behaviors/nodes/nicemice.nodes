@@ -69,11 +69,6 @@
 			{
 				"type": "bool", 
 				"value": true
-			},
-			"timeout": 
-			{
-				"type": "number", 
-				"value": null
 			}
 		},
 		"category": "nicemice",
@@ -161,31 +156,6 @@
 		{
 			"intent": {"type": "string", "key": null},
 			"range": {"type": "number", "key": null}
-		}
-	},
-	"nicemice_resolveKiteMove" :
-	{
-		"type": "action",
-		"name": "nicemice_resolveKiteMove",
-		"title": "nicemice_resolveKiteMove",
-		"properties":
-		{
-			"entity": {"type": "entity", "key": "target"},
-			"range": {"type": "number", "value": 20},
-			"standoffFactor": {"type": "number", "value": 1.0},
-			"bandFactor": {"type": "number", "value": 0.25},
-			"runThreshold": {"type": "number", "value": 6},
-			"debug": {"type": "bool", "value": false}
-		},
-		"category": "nicemice",
-		"script": "/scripts/actions/nicemice_wandstaff.lua",
-		"output":
-		{
-			"direction": {"type": "number", "key": null},
-			"run": {"type": "bool", "key": null},
-			"shouldMove": {"type": "bool", "key": null},
-			"distance": {"type": "number", "key": null},
-			"standoff": {"type": "number", "key": null}
 		}
 	},
 	"nicemice_debugLog" :
@@ -373,17 +343,13 @@
 	{
 		"type": "module",
 		"name": "nicemice_wandstaff-approach",
-		"title": "Wand/Staff Approach",
+		"title": "",
 		"properties": 
 		{
 			"liquidHesitationTime": {"type": "number", "value": 3},
 			"forceRunRange": {"type": "number", "value": 15},
-			"cantReachDialog": {"type": "bool", "value": false},
-			"slotResource": {"type": "string", "value": "meleePosition"}
-		},
-		"category": "nicemice",
-		"behavior": "/behaviors/npc/combat/nicemice_wandstaff-approach.behavior",
-		"output": {}
+			"cantReachDialog": {"type": "bool", "value": true}
+		}
 	},
 	"nicemice_clampAimPosition": 
 	{

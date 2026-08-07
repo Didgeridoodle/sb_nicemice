@@ -293,68 +293,6 @@ function nicemice_resolveBuffTarget(args, board)
   return true, {entity = best, position = world.entityPosition(best)}
 end
 
--- Kiting decision: where do we want to stand relative to a target, and which
--- way do we step to get there?
---
--- The standoff band is derived from the ability's own cast range rather than a
--- fixed distance, so a short-range ability closes in and a long-range one hangs
--- back without any per-weapon tuning. Sitting at the outer edge of the band is
--- deliberate: a guided projectile is steered by our aim, and the further out we
--- start the more of its flight is spent under that steering.
---
--- Returns direction 0 when we are already inside the band. util.toDirection
--- maps 0 to +1, so callers must gate movement on shouldMove rather than testing
--- direction for zero themselves.
---
--- param entity
--- param range          -- the ability's resolved cast range
--- param standoffFactor -- fraction of range to sit at
--- param bandFactor     -- how far inside standoff we tolerate before backing up
--- param runThreshold   -- tiles of error past which we run instead of walk
--- param debug
--- output direction
--- output run
--- output shouldMove
--- output distance
--- output standoff
-function nicemice_resolveKiteMove(args, board)
-  if args.entity == nil or args.range == nil then return false end
-  if not world.entityExists(args.entity) then return false end
-
-  local selfPosition = entity.position()
-  local targetPosition = world.entityPosition(args.entity)
-  if targetPosition == nil then return false end
-
-  local distance = world.magnitude(targetPosition, selfPosition)
-  local toTarget = world.distance(targetPosition, selfPosition)
-
-  local standoff = args.range * (args.standoffFactor or 1.0)
-  local innerEdge = standoff * (1.0 - (args.bandFactor or 0.25))
-
-  local towards = (toTarget[1] >= 0) and 1 or -1
-  local direction, reason = 0, "holding"
-  if distance > standoff then
-    direction, reason = towards, "closing"
-  elseif distance < innerEdge then
-    direction, reason = -towards, "backing off"
-  end
-
-  local offBy = math.abs(distance - standoff)
-  local run = offBy > (args.runThreshold or 6)
-
-  trace(args.debug, string.format(
-    "kite %s: distance=%.1f band=%.1f..%.1f direction=%d run=%s",
-    reason, distance, innerEdge, standoff, direction, tostring(run)))
-
-  return true, {
-    direction = direction,
-    run = run,
-    shouldMove = direction ~= 0,
-    distance = distance,
-    standoff = standoff,
-  }
-end
-
 -- Pass-through tracing node: drop it anywhere in a sequence to see that the
 -- tree reached that point, and to dump whatever board values you route in.
 -- Always succeeds, so it never changes the shape of the branch it sits in.
@@ -416,18 +354,47 @@ function nicemice_chargedFire(args, board, nodeId, dt)
   return true
 end
 
+-- Pull the aim point to somewhere the ability will actually accept.
+--
+-- Every staff ability gates its discharge on the same targetValid():
+--     world.magnitude(focusPos, aimPos) <= maxCastRange
+--     and not world.lineTileCollision(mcontroller.position(), focusPos)
+--     and not world.lineTileCollision(focusPos, aimPos)
+-- Fail it and discharge falls straight through to cooldown -- the whole charge
+-- is spent for nothing, which is what a "failed cast" looks like from outside.
+--
+-- focusPos is the staff's focal point (mcontroller.position() plus the hand
+-- offset), which we cannot read from here; entity.position() is the closest
+-- stand-in and the caller's margin absorbs the difference.
+--
+-- This is only wanted while charging. controlprojectile steers its projectiles
+-- to activeItem.ownerAimPosition() every tick with NO range limit once they
+-- exist, so clamping after discharge is what stops projectiles reaching past
+-- the cast range.
+--
 -- param range
 function nicemice_clampAimPosition(args, board)
   if args.range == nil then return true end
 
-  local aimPosition = npc.aimPosition()
   local selfPosition = entity.position()
   -- world.distance is wrap-safe; plain subtraction is not, and staff casts
   -- happen at ranges where a world seam between caster and target matters.
-  local delta = world.distance(aimPosition, selfPosition)
-  if vec2.mag(delta) > args.range then
-    npc.setAimPosition(vec2.add(selfPosition, vec2.mul(vec2.norm(delta), args.range)))
+  local delta = world.distance(npc.aimPosition(), selfPosition)
+  local distance = vec2.mag(delta)
+  if distance == 0 then return true end
+
+  local heading = vec2.norm(delta)
+  distance = math.min(distance, args.range)
+
+  -- Walk the aim in until the line from us to it is clear. Without this an
+  -- otherwise in-range cast is still refused whenever terrain crosses the ray.
+  local aimPosition = vec2.add(selfPosition, vec2.mul(heading, distance))
+  local step = distance / 8
+  while distance > 1 and world.lineTileCollision(selfPosition, aimPosition) do
+    distance = distance - step
+    aimPosition = vec2.add(selfPosition, vec2.mul(heading, distance))
   end
 
+  npc.setAimPosition(aimPosition)
   return true
 end
