@@ -78,7 +78,8 @@
     "/scripts/actions/time.lua",
     "/scripts/actions/position.lua",
     "/scripts/actions/entity.lua",
-    "/scripts/actions/nicemice_wandstaff.lua"
+    "/scripts/actions/nicemice_wandstaff.lua",
+    "/scripts/actions/nicemice_whipaim.lua"
   ],
   "parameters": {
     "castRangeFallback": 25,
