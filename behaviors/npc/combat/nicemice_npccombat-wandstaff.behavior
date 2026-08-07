@@ -1,12 +1,29 @@
 //  PRIMARY HAND ONLY. Alt-hand casting is deliberately removed for now: every
 //  generated staff rolls a random altAbility, and an ability with no npcIntent
-//  patch falls back to "harmful", so the alt branch was aiming at the combat
-//  target and overwriting the primary branch's aim in the same tick. Aim
-//  position is a single shared resource -- whichever branch writes it last
-//  wins. Re-add alt only under this same one-cast-per-tick selector.
+//  patch falls back to "harmful", so the alt branch aimed at the combat target
+//  and overwrote the primary branch's aim in the same tick. Aim position is a
+//  single shared resource -- whichever branch writes it last wins. Re-add alt
+//  only under the same one-cast-per-tick selector.
 //
-//  Order below is intent priority: heal, then buff, then attack. Only one leaf
-//  may own the aim on any given tick.
+//  MOVEMENT comes from the combat coordinator stagehand, same as vanilla melee.
+//  The coordinator hands each member a slot position around the target and
+//  nicemice_wandstaff-approach paths to it with moveToPosition, which both
+//  closes and retreats -- if the assigned slot is further out than we are
+//  standing, pathing to it walks us backwards.
+//
+//  The group and task joins MUST run every tick: BGroup:updateGroups() drops
+//  any group or task that was not re-joined during the current update, and
+//  without a joined task the coordinator allocates no slot and every
+//  groupResource lookup comes back empty. That is why the previous copy of the
+//  approach behavior did nothing -- nothing in this tree had ever joined.
+//
+//  Casting is listed before movement because setAimPosition sets
+//  self.setFacingDirection, and moveToPosition only takes over facing when that
+//  flag is clear -- so an NPC that is aiming walks its slot while still facing
+//  its target.
+//
+//  Casting order is intent priority: heal, then buff, then attack. Only one
+//  leaf may own the aim on any given tick.
 //
 //  castRangeFallback / castRangeMargin: cast range is read off the equipped
 //  ability (vanilla staff abilities declare maxCastRange, all of them 25 tiles).
@@ -16,8 +33,9 @@
 //  requireLineOfSight: heal/buff ally scans reject targets we cannot see. Turn
 //  off in walled test arenas where allies sit behind pillars.
 //
-//  debugTargeting: log every ally candidate with its damage team and each
-//  filter result, so you can see which filter rejected whom.
+//  debugMovement also logs the slot position and the min/max range the
+//  coordinator actually hands back, which is the number we need in order to
+//  tune standoff.
 {
   "name": "nicemice_npccombat-wandstaff",
   "description": "",
@@ -39,7 +57,15 @@
     "validBuffTargetRange": 30,
     "requireLineOfSight": true,
     "debugTargeting": false,
-    "wizardryCooldown_primary": 2.5
+    "wizardryCooldown_primary": 2.5,
+    "debugMovement": false,
+    "coordinatorTaskId": "melee",
+    "coordinatorMinMembers": 1,
+    "coordinatorMaxMembers": 8,
+    "liquidHesitationTime": 3,
+    "forceRunRange": 15,
+    "cantReachDialog": false,
+    "coordinatorSlotResource": "meleePosition"
   },
   "root": {
     "title": "sequence",
@@ -152,6 +178,68 @@
           }
         },
         "children": [
+          {
+            "title": "join the combat coordinator",
+            "type": "composite",
+            "name": "sequence",
+            "parameters": {},
+            "children": [
+              {
+                "title": "isValidTarget",
+                "type": "action",
+                "name": "isValidTarget",
+                "parameters": {
+                  "entity": {
+                    "key": "target"
+                  }
+                }
+              },
+              {
+                "title": "group",
+                "type": "action",
+                "name": "group",
+                "parameters": {
+                  "groupId": {
+                    "value": "combat"
+                  },
+                  "goalType": {
+                    "value": "entity"
+                  },
+                  "goal": {
+                    "value": "target"
+                  },
+                  "behavior": {
+                    "value": "combatcoordinator"
+                  },
+                  "minMembers": {
+                    "key": "<coordinatorMinMembers>"
+                  },
+                  "maxMembers": {
+                    "key": "<coordinatorMaxMembers>"
+                  }
+                }
+              },
+              {
+                "title": "task",
+                "type": "action",
+                "name": "task",
+                "parameters": {
+                  "groupId": {
+                    "value": "combat"
+                  },
+                  "taskId": {
+                    "key": "<coordinatorTaskId>"
+                  },
+                  "minMembers": {
+                    "key": "<coordinatorMinMembers>"
+                  },
+                  "maxMembers": {
+                    "key": "<coordinatorMaxMembers>"
+                  }
+                }
+              }
+            ]
+          },
           {
             "title": "one cast at a time, most useful first",
             "type": "composite",
@@ -707,6 +795,130 @@
                 ]
               }
             ]
+          },
+          {
+            "title": "Wand/Staff Approach",
+            "type": "module",
+            "name": "nicemice_wandstaff-approach",
+            "parameters": {
+              "liquidHesitationTime": {
+                "key": "<liquidHesitationTime>"
+              },
+              "forceRunRange": {
+                "key": "<forceRunRange>"
+              },
+              "cantReachDialog": {
+                "key": "<cantReachDialog>"
+              },
+              "slotResource": {
+                "key": "<coordinatorSlotResource>"
+              }
+            }
+          },
+          {
+            "title": "optional",
+            "type": "decorator",
+            "name": "optional",
+            "parameters": {
+              "shouldRun": {
+                "key": "<debugMovement>"
+              }
+            },
+            "child": {
+              "title": "what did the coordinator assign us",
+              "type": "composite",
+              "name": "sequence",
+              "parameters": {},
+              "children": [
+                {
+                  "title": "groupResource",
+                  "type": "action",
+                  "name": "groupResource",
+                  "parameters": {
+                    "groupId": {
+                      "value": "combat"
+                    },
+                    "name": {
+                      "key": "<coordinatorSlotResource>"
+                    }
+                  },
+                  "output": {
+                    "position": "coordinatorSlot"
+                  }
+                },
+                {
+                  "title": "nicemice_debugLog",
+                  "type": "action",
+                  "name": "nicemice_debugLog",
+                  "parameters": {
+                    "text": {
+                      "value": "coordinator slot"
+                    },
+                    "position": {
+                      "key": "coordinatorSlot"
+                    }
+                  }
+                },
+                {
+                  "title": "groupResource",
+                  "type": "action",
+                  "name": "groupResource",
+                  "parameters": {
+                    "groupId": {
+                      "value": "combat"
+                    },
+                    "name": {
+                      "value": "minRange"
+                    }
+                  },
+                  "output": {
+                    "number": "coordinatorMinRange"
+                  }
+                },
+                {
+                  "title": "nicemice_debugLog",
+                  "type": "action",
+                  "name": "nicemice_debugLog",
+                  "parameters": {
+                    "text": {
+                      "value": "coordinator minRange"
+                    },
+                    "number": {
+                      "key": "coordinatorMinRange"
+                    }
+                  }
+                },
+                {
+                  "title": "groupResource",
+                  "type": "action",
+                  "name": "groupResource",
+                  "parameters": {
+                    "groupId": {
+                      "value": "combat"
+                    },
+                    "name": {
+                      "value": "maxRange"
+                    }
+                  },
+                  "output": {
+                    "number": "coordinatorMaxRange"
+                  }
+                },
+                {
+                  "title": "nicemice_debugLog",
+                  "type": "action",
+                  "name": "nicemice_debugLog",
+                  "parameters": {
+                    "text": {
+                      "value": "coordinator maxRange"
+                    },
+                    "number": {
+                      "key": "coordinatorMaxRange"
+                    }
+                  }
+                }
+              ]
+            }
           },
           {
             "title": "runner",

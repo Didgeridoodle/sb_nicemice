@@ -13,7 +13,10 @@
   "parameters": {
     "liquidHesitationTime": 3,
     "forceRunRange": 15,
-    "cantReachDialog": true
+    "cantReachDialog": true,
+    //Which coordinator resource holds our assigned slot. "meleePosition" comes
+    //from the melee task; the ranged task publishes "movePosition" instead.
+    "slotResource": "meleePosition"
   },
   "root": {
     "title": "parallel",
@@ -30,7 +33,7 @@
         "name": "groupResource",
         "parameters": {
           "groupId": {"value": "combat"},
-          "name": {"value": "meleePosition"}
+          "name": {"key": "<slotResource>"}
         },
         "output": {
           "position": "meleePosition"

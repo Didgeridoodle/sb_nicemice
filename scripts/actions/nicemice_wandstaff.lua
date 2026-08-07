@@ -293,6 +293,68 @@ function nicemice_resolveBuffTarget(args, board)
   return true, {entity = best, position = world.entityPosition(best)}
 end
 
+-- Kiting decision: where do we want to stand relative to a target, and which
+-- way do we step to get there?
+--
+-- The standoff band is derived from the ability's own cast range rather than a
+-- fixed distance, so a short-range ability closes in and a long-range one hangs
+-- back without any per-weapon tuning. Sitting at the outer edge of the band is
+-- deliberate: a guided projectile is steered by our aim, and the further out we
+-- start the more of its flight is spent under that steering.
+--
+-- Returns direction 0 when we are already inside the band. util.toDirection
+-- maps 0 to +1, so callers must gate movement on shouldMove rather than testing
+-- direction for zero themselves.
+--
+-- param entity
+-- param range          -- the ability's resolved cast range
+-- param standoffFactor -- fraction of range to sit at
+-- param bandFactor     -- how far inside standoff we tolerate before backing up
+-- param runThreshold   -- tiles of error past which we run instead of walk
+-- param debug
+-- output direction
+-- output run
+-- output shouldMove
+-- output distance
+-- output standoff
+function nicemice_resolveKiteMove(args, board)
+  if args.entity == nil or args.range == nil then return false end
+  if not world.entityExists(args.entity) then return false end
+
+  local selfPosition = entity.position()
+  local targetPosition = world.entityPosition(args.entity)
+  if targetPosition == nil then return false end
+
+  local distance = world.magnitude(targetPosition, selfPosition)
+  local toTarget = world.distance(targetPosition, selfPosition)
+
+  local standoff = args.range * (args.standoffFactor or 1.0)
+  local innerEdge = standoff * (1.0 - (args.bandFactor or 0.25))
+
+  local towards = (toTarget[1] >= 0) and 1 or -1
+  local direction, reason = 0, "holding"
+  if distance > standoff then
+    direction, reason = towards, "closing"
+  elseif distance < innerEdge then
+    direction, reason = -towards, "backing off"
+  end
+
+  local offBy = math.abs(distance - standoff)
+  local run = offBy > (args.runThreshold or 6)
+
+  trace(args.debug, string.format(
+    "kite %s: distance=%.1f band=%.1f..%.1f direction=%d run=%s",
+    reason, distance, innerEdge, standoff, direction, tostring(run)))
+
+  return true, {
+    direction = direction,
+    run = run,
+    shouldMove = direction ~= 0,
+    distance = distance,
+    standoff = standoff,
+  }
+end
+
 -- Pass-through tracing node: drop it anywhere in a sequence to see that the
 -- tree reached that point, and to dump whatever board values you route in.
 -- Always succeeds, so it never changes the shape of the branch it sits in.
